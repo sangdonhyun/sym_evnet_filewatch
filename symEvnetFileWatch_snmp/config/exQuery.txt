@@ -1,0 +1,96 @@
+select  
+  '2016-10-24 15:21:00' as a,
+  --check_datetime,  
+  event_trap_serial_number, 
+  ctrl_alias,         
+  ref_code,                -- ref code
+  --event_trap_datetime,     
+  '2016/10/24 15:21:00' as b,
+  event_trap_description,  -- 
+  error_level   event_code_level, -- SRM
+  trim(event_code_level) error_level -- vendor 
+from (
+	 select CC.*,
+		case when EE.level is null or EE.level = '' then COALESCE(DD.error_level,'INFO')
+				else EE.level end error_level
+	 from (
+		  select  check_datetime,
+			  COALESCE(BB.ctrl_unum,event_trap_serial_number) event_trap_serial_number,
+			  event_trap_nick_name,
+			  event_trap_refcode,
+			  event_trap_parts_id,
+			  event_trap_datetime,
+			  case when event_trap_description = '' then 'manual REF.' else event_trap_description end event_trap_description,
+			  case when event_code_level2 = '' or event_code_level2 is null then 'manual REF.' else event_code_level2 end event_code_level,
+			  action_event_datetime,
+			  action_memo,
+			  user_id,
+			  ref_code,
+			  event_action_memo,
+			  case when ctrl_alias is null or ctrl_alias = '' 
+						then COALESCE(BB.ctrl_unum,event_trap_serial_number)
+						else ctrl_alias 
+					end ctrl_alias      
+		 from (
+			 select kk1.*,
+				event_trap_refcode ref_code,
+				case when trim(event_trap_description) = '' or event_trap_description is null
+					then error_msg1 else event_trap_description
+					end event_action_memo,
+				case when trim(event_code_level) = '' or event_code_level is null
+					then error_level else event_code_level
+					end event_code_level2
+			 from (
+				  select *
+				  from pm_auto_trap_info
+				  where action_memo = '' 
+					and  check_datetime between '20160101 00:00:00'::timestamp and '20170101 00:00:00'::timestamp 
+					and event_code_level = ''
+			 )kk1 left outer join ( 
+				select ref_code,str_pos,error_level,error_msg1
+				from pm_code_trap_ref
+			 )kk2 on (substr(kk1.event_trap_refcode,0,str_pos) = substr(ref_code,0,str_pos) and kk1.event_trap_refcode not like '0x%') or (kk1.event_trap_refcode = ref_code and kk1.event_trap_refcode like '0x%')
+
+			 union
+
+			 select at1.*,
+				 'HDvM.CODE' ref_code,
+				 at1.event_trap_description  event_action_memo,
+				 at1.event_code_level event_code_level2
+			 from pm_auto_trap_info at1
+			 where action_memo = '' and  
+				check_datetime between '20160101 00:00:00'::timestamp and '20170101 00:00:00'::timestamp and 
+				event_code_level <> ''                 
+		 )AA left outer join (
+			 select coalesce(B.ctrl_unum, A.ctrl_unum) ctrl_unum,
+				coalesce(B.ctrl_unum_rename, A.ctrl_unum) ctrl_snum,
+				ctrl_unum_rename, disk_ip_num, ctrl_alias 
+			from (
+				select ctrl_unum, disk_ip_num, COALESCE(ctrl_alias,ctrl_unum) ctrl_alias
+				from fs_man_ctrl_mst where del_bit = '0'
+				union
+				select switch_unum, switch_unum, COALESCE(switch_alias,switch_unum) ctrl_alias
+				from fs_man_switch_mst
+				union
+				select server_nm, server_nm, COALESCE(server_alias,server_nm) ctrl_alias
+				from fs_code_nas_info
+			) A left outer join (
+				select ctrl_unum, ctrl_unum_rename from fs_code_ctrl_dup_info
+				group by ctrl_unum, ctrl_unum_rename
+			) B
+			on A.ctrl_unum = B.ctrl_unum_rename
+		)BB on AA.event_trap_serial_number = BB.ctrl_snum 
+			or (strpos(disk_ip_num,AA.event_trap_serial_number) > 0 and strpos(AA.event_trap_serial_number,'.') > 0)
+	)CC left outer join (
+		select trim(error_level) error_level,trim(vendor_level) vendor_level
+		from pm_code_error_level 
+		group by trim(error_level),trim(vendor_level)
+	)DD on CC.event_code_level = DD.vendor_level 
+	left outer join (
+		select * from pm_exclude_error_code
+	)EE on substr(CC.event_trap_serial_number,length(CC.event_trap_serial_number)-4) = substr( EE.serial,length(EE.serial)-4)
+		and lower(CC.event_trap_refcode) = lower(EE.code)
+)aa  
+where error_level in (select error_level from pm_code_error_monitor where check_bit = '0')  and ctrl_alias='DB이중화'
+order by check_datetime desc limit 1
+
