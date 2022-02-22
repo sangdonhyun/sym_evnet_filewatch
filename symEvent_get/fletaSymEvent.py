@@ -3,7 +3,7 @@ Created on 2013. 9. 14.
 
 @author: Administrator
 '''
-from pysnmp.hlapi import *
+#from pysnmp.hlapi import *
 import os
 import datetime
 import time
@@ -72,9 +72,7 @@ Thu Jan 10 18:21:44 2013 FA-10C Symm Device(063D) Informational 0x0008
 """
         return msg    
     def getDelaySec(self):
-        
         try:
-            
             return int(self.cfg.get('common','delaysec'))
         except:
             return 600
@@ -97,22 +95,7 @@ Thu Jan 10 18:21:44 2013 FA-10C Symm Device(063D) Informational 0x0008
         evtMsg=self.sample()
         return evtMsg
     
-    def getEvtMsg10(self):
 
-        """
-        symevent list -start 09/09/2013:00:00:00
-        
-        """
-        dateTime = self.get30Min()
-        cmd = 'symevent list -start %s'%dateTime
-        return cmd
-#         evtMsg=os.popen(cmd).read()
-#         evtMsg = self.execute(cmd)
-#         
-#         
-#         return evtMsg
-    
-    
     def execute(self,cmd):
         
         p=subprocess.Popen(cmd.split(),shell=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
@@ -122,10 +105,7 @@ Thu Jan 10 18:21:44 2013 FA-10C Symm Device(063D) Informational 0x0008
             return out
         else:
             return err
-    
-        
-    
-    
+
     def getSymIdList(self):
 #         cfgList= commands.getoutput('symcfg')
 #         print cfgList
@@ -217,19 +197,30 @@ Thu Jan 10 18:21:44 2013 FA-10C Symm Device(063D) Informational 0x0008
 #             print 'deley time :%s'%self.delaySec
             time.sleep(self.delaySec)
     
-    
+    def get_start_time(self,sid):
+        dateTime = self.com.getNow('%m/%d/%Y:00:00')
+        try:
+            last_evt = self.getLastEvt(sid)
+        except:
+            last_evt = ['', '', '']
+        if not last_evt[1] == '':
+            dt = datetime.datetime.strptime(last_evt[1], "%Y-%m-%d %H:%M:%S")
+            dateTime = dt.strftime('%m/%d/%Y:00:00')
+        return dateTime
+
     def getEvtMsgSid(self,sid):
         """
         symevent list -start 09/09/2013:00:00
         
         """
 #         dateTime = self.com.getNow('%m/%d/%Y:%H:%M')
-        dateTime = self.com.getNow('%m/%d/%Y:00:00')
+        dateTime = self.get_start_time(sid)
+
         cmd = 'symevent list -sid %s -start %s'%(sid,dateTime)
         print cmd
         evtMsg=os.popen(cmd).read()
         #sample
-        evtMsg=self.sample()
+        #evtMsg=self.sample()
         
         return evtMsg
     
@@ -321,77 +312,19 @@ Thu Jan 10 18:21:44 2013 FA-10C Symm Device(063D) Informational 0x0008
         if errorIndication:
             print(errorIndication)
             
-    def evtGetMsg(self,msg):
-        
-        lines = msg.splitlines()
-        errList = []
-        for i in range(len(lines)):
-            line = lines[i]
-            
-            if 'Symmetrix ID:' in line:
-                symId = line.split(':')[1].strip()
-                
-            evtbit = False
-            try:
-                strt = ' '.join(line.split()[:5])
-                evtTime = datetime.datetime.strptime(strt, "%a %b %d %H:%M:%S %Y")
-                evtbit = True
-            except:
-                evtbit = False
-        
-            if evtbit:
-                evt = {}
-                evt['symid']    = symId
-                evt['Time'] = datetime.datetime.strftime(evtTime,'%Y-%m-%d %H:%M:%S')
-                dt =  line.split()
-               
-                evt['Dir']      = dt[5]
-                evt['Src']      = dt[6]
-                evt['Category'] = ' '.join(dt[7:-2])
-                evt['Severity'] = dt[-2]
-                evt['ErrorNum'] = str(dt[-1])
-                evt['Descript'] = lines[i+1].strip()
-                
-                errList.append(evt)
-        
-        return errList
-    
-    
-    def getSymEvent(self,sid):
-        print self.com.getHeadMsg('SYMEVET')
+
+    def getSymEventFile(self, sym):
+        hostname = os.popen('hostname').read().strip()
         cdate = self.com.getNow('%Y%m%d%H%M00')
-        print 'now    date :',cdate
-        
-        msg=self.getEvtMsgSid(sid)
-        print msg
-        errList=self.evtGetMsg(msg)
-        preLastEvt=self.getLastEvt(sid)
+        bdate = self.get_start_time(sym)
+        now = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+        now_str = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        fileName = os.path.join('data', '%s_%s_%s.txt' % (hostname,sym, now))
+        preLastEvt = self.getLastEvt(sym)
         print preLastEvt
-        preDatetime=preLastEvt[1]
+        preDatetime = preLastEvt[1]
 
-        sendErrList=[]
-        for err in errList:
-#             print err['symid'],err['Time'],err['Descript']
-#             print preDatetime,err['Time'],preDatetime > err['Time'],preDatetime < err['Time']
-            
-            if preDatetime < err['Time']:
-                sendErrList.append(err)
-                
-        
-        lastEvt=errList[-1]
-        if preLastEvt==['','','']:
-            self.setLastEvt(lastEvt,sid)
-        
-        print 'tottal err count:',len(sendErrList)
-        for err in sendErrList:
-            logmsg=str(err)
-            self.log.debug(logmsg)
-            self.send_snmp(err)
-        print self.com.getEndMsg()
-        
 
-    def getSymEventFile(self,sym):
-        fileName = os.path.join(self.com.dataDir, '%s_%s_%s.txt' % (hostname, cdate, bdate))
         with open(fileName, 'w') as f:
             print self.com.getHeadMsg('SYM EVENT')
             f.write(self.com.getHeadMsg('SYM EVENT') + '\n')
@@ -400,33 +333,45 @@ Thu Jan 10 18:21:44 2013 FA-10C Symm Device(063D) Informational 0x0008
             f.write('###***starttime***###\n')
             f.write('%s\n' % bdate)
             f.write('###***symevent***###\n')
-            cmd = self.getEvtMsg10()
-            print cmd
-            remsg = self.execute(cmd)
+            remsg=self.getEvtMsgSid(sym)
             print remsg
             f.write(remsg + '\n')
             f.write(self.com.getEndMsg())
             print self.com.getEndMsg()
 
         print '\nFILENAME : ', fileName
+        socketClient.SocketSender(FILENAME=fileName,DIR='event').main()
         os.remove(fileName)
+        err = dict()
+        err['symid']=sym
+        err['Time'] =now_str
+        err['Descript'] =''
+        self.setLastEvt(err,sym)
         if not os.path.isfile(fileName):
             print 'FILE REMOVE', fileName
         #             print 'deley time :%s'%self.delaySec
-        time.sleep(self.delaySec)
+
+        #time.sleep(self.delaySec)
+
     def main(self):
         symList=self.getSymIdList()
         try:
             targetDir=self.cfg.get('server','targetDir')
         except:
             targetDir='event'
-            
+        try:
+            send = self.cfg.get('common','snmp_send')
+        except:
+            send = 'n'
+
         for sym in symList:
             print 'sym :',sym
-            
-            self.getSymEvent(sym)
-            
-            
+            print 'send :', send
+            try:
+                self.getSymEventFile(sym)
+            except Exception as e:
+                print (str(e))
+
 if __name__ == '__main__':
 #     SymEvent().runExe()
     SymEvent().main()

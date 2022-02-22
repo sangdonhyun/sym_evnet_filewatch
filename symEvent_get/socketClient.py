@@ -27,10 +27,9 @@ class SocketSender():
 
     def getInfo(self):
         cfg = ConfigParser.RawConfigParser()
-        cfgFile = os.path.join(self.com.confDir, 'config.cfg')
+        cfgFile = os.path.join('config', 'config.cfg')
         cfg.read(cfgFile)
         self.HOST = cfg.get('server', 'ip')
-
         self.PORT = cfg.get('server', 'port')
         return cfg
 
